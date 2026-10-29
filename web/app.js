@@ -10,9 +10,9 @@ const $ = (id) => document.getElementById(id);
 async function loadBundled() {
   try {
     const [h, c, s] = await Promise.all([
-      fetch('data/hotspots.json').then(r => r.ok ? r.json() : null),
-      fetch('data/calendar.json').then(r => r.ok ? r.json() : null),
-      fetch('data/summary.json').then(r => r.ok ? r.json() : null),
+      fetch('./data/hotspots.json').then(r => r.ok ? r.json() : null),
+      fetch('./data/calendar.json').then(r => r.ok ? r.json() : null),
+      fetch('./data/summary.json').then(r => r.ok ? r.json() : null),
     ]);
     if (h && h.length) {
       STATE.raw = h; STATE.calData = c; STATE.summary = s;
@@ -252,8 +252,9 @@ function renderCalendar() {
 function renderMap() {
   if (!STATE.map) {
     STATE.map = L.map('map', { center: [12.5, 105], zoom: 6 });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 19
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '&copy; Esri &copy; OpenStreetMap',
+      maxZoom: 16
     }).addTo(STATE.map);
     STATE.markers = L.layerGroup().addTo(STATE.map);
   }
@@ -279,53 +280,99 @@ function renderSeam() {
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0,0,W,H);
-  // prefer the full raw counts (all detections) for the seam test
-  let agg = (STATE.summary && STATE.summary.raw_by_month) ? STATE.summary.raw_by_month : null;
+  
+  // Prefer monthly aggregation if >= 2 months; otherwise aggregate by day
+  let agg = (STATE.summary && STATE.summary.raw_by_month && Object.keys(STATE.summary.raw_by_month).length >= 2) 
+    ? STATE.summary.raw_by_month 
+    : null;
+  let isDaily = false;
+
   if (!agg) {
-    agg = {};
+    const rawMonths = {};
     STATE.raw.forEach(x => {
       const m = x.date.slice(0,7);
-      agg[m] = agg[m] || {MODIS:0, VIIRS:0};
-      agg[m][x.sensor] = (agg[m][x.sensor]||0)+1;
+      rawMonths[m] = true;
     });
+    if (Object.keys(rawMonths).length >= 2) {
+      agg = {};
+      STATE.raw.forEach(x => {
+        const m = x.date.slice(0,7);
+        agg[m] = agg[m] || {MODIS:0, VIIRS:0};
+        agg[m][x.sensor] = (agg[m][x.sensor]||0)+1;
+      });
+    } else {
+      isDaily = true;
+      agg = {};
+      STATE.raw.forEach(x => {
+        const d = x.date;
+        agg[d] = agg[d] || {MODIS:0, VIIRS:0};
+        agg[d][x.sensor] = (agg[d][x.sensor]||0)+1;
+      });
+    }
   }
-  const months = Object.keys(agg).sort();
-  if (months.length < 2) {
+
+  const buckets = Object.keys(agg).sort();
+  if (buckets.length === 0) {
     ctx.fillStyle = '#94a3b8'; ctx.font = '13px sans-serif';
-    ctx.fillText('Need ≥2 months of data for the seam test.', 20, H/2); return;
+    ctx.fillText('No detections available to compare.', 20, H/2); return;
   }
-  const maxV = Math.max(...months.map(m => Math.max(agg[m].MODIS, agg[m].VIIRS)), 1);
+
+  const maxV = Math.max(...buckets.map(b => Math.max(agg[b].MODIS, agg[b].VIIRS)), 1);
   const pad = 40, plotW = W - pad*2, plotH = H - pad*2;
-  // axes
+
+  // Title / Mode indicator on canvas
+  ctx.fillStyle = '#e2e8f0'; ctx.font = 'bold 12px sans-serif';
+  ctx.fillText(isDaily ? 'Daily Sensor Comparison (MODIS vs VIIRS)' : 'Monthly Seam Test (MODIS vs VIIRS)', pad, 18);
+
+  // Axes
   ctx.strokeStyle = '#475569'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(pad, pad); ctx.lineTo(pad, H-pad); ctx.lineTo(W-pad, H-pad); ctx.stroke();
-  // gridlines
+
+  // Gridlines
   ctx.fillStyle = '#94a3b8'; ctx.font = '10px monospace';
   for (let i = 0; i <= 4; i++) {
     const y = H - pad - (plotH*i/4);
     ctx.fillText(Math.round(maxV*i/4), 4, y+3);
     ctx.strokeStyle = '#1e293b'; ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W-pad, y); ctx.stroke();
   }
-  months.forEach((m,i) => {
-    const x = pad + (plotW * i / (months.length-1 || 1));
-    ctx.fillStyle = '#94a3b8'; ctx.save(); ctx.translate(x, H-pad+12); ctx.rotate(-0.6);
-    ctx.fillText(m.slice(2), 0, 0); ctx.restore();
+
+  // X labels
+  buckets.forEach((b, i) => {
+    const x = pad + (plotW * i / Math.max(1, buckets.length - 1));
+    ctx.fillStyle = '#94a3b8'; ctx.save(); ctx.translate(x, H-pad+14); ctx.rotate(-0.5);
+    ctx.fillText(isDaily ? b.slice(5) : b.slice(2), -10, 0); ctx.restore();
   });
-  // lines
+
+  // Lines
   function drawLine(key, color) {
     ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
-    months.forEach((m,i) => {
-      const x = pad + (plotW * i / (months.length-1 || 1));
-      const y = H - pad - (agg[m][key]/maxV)*plotH;
-      if (i === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    buckets.forEach((b, i) => {
+      const x = pad + (plotW * i / Math.max(1, buckets.length - 1));
+      const val = agg[b][key] || 0;
+      const y = H - pad - (val / maxV) * plotH;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
     ctx.stroke();
+
+    // Data points
+    ctx.fillStyle = color;
+    buckets.forEach((b, i) => {
+      const x = pad + (plotW * i / Math.max(1, buckets.length - 1));
+      const val = agg[b][key] || 0;
+      const y = H - pad - (val / maxV) * plotH;
+      ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2); ctx.fill();
+    });
   }
+
   drawLine('MODIS', '#f59e0b');
   drawLine('VIIRS', '#3b82f6');
-  // legend
-  ctx.fillStyle = '#f59e0b'; ctx.fillRect(pad, 8, 12, 3); ctx.fillStyle='#94a3b8'; ctx.fillText('MODIS', pad+16, 14);
-  ctx.fillStyle = '#3b82f6'; ctx.fillRect(pad+80, 8, 12, 3); ctx.fillStyle='#94a3b8'; ctx.fillText('VIIRS', pad+96, 14);
+
+  // Legend
+  const legendX = W - pad - 180;
+  ctx.fillStyle = '#f59e0b'; ctx.fillRect(legendX, 10, 12, 4); 
+  ctx.fillStyle = '#94a3b8'; ctx.font = '11px sans-serif'; ctx.fillText('MODIS (1km)', legendX + 18, 15);
+  ctx.fillStyle = '#3b82f6'; ctx.fillRect(legendX + 90, 10, 12, 4); 
+  ctx.fillStyle = '#94a3b8'; ctx.fillText('VIIRS (375m)', legendX + 108, 15);
 }
 
 function renderTable() {
