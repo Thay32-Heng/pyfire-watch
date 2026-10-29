@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PyFire Watch — Burning Activity Calendar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">🔥</span>
+      <div>
+        <div class="brand-name">PyFire Watch</div>
+        <div class="brand-sub">MODIS + VIIRS harmonised burning calendar</div>
+      </div>
+    </div>
+    <div id="data-status" class="status-badge status-synth">Loading…</div>
+    <div class="header-actions">
+      <input type="file" id="csv-input" accept=".csv" hidden />
+      <button id="btn-upload" class="btn btn-ghost">Upload CSV</button>
+      <button id="btn-export" class="btn btn-primary">Export CSV</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <section class="card">
+        <h3>Sensor view</h3>
+        <div class="seg" id="sensor-seg">
+          <button data-sensor="harmonized" class="seg-btn active">Harmonized</button>
+          <button data-sensor="MODIS" class="seg-btn">MODIS only</button>
+          <button data-sensor="VIIRS" class="seg-btn">VIIRS only</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>Filters</h3>
+        <label>Region
+          <select id="f-region" class="input"></select>
+        </label>
+        <label>Start date
+          <input type="date" id="f-start" class="input" />
+        </label>
+        <label>End date
+          <input type="date" id="f-end" class="input" />
+        </label>
+        <label>Min confidence <span id="conf-val" class="mono">0%</span>
+          <input type="range" id="f-conf" min="0" max="100" value="0" step="5" />
+        </label>
+        <label>Min FRP <span id="frp-val" class="mono">0 MW</span>
+          <input type="range" id="f-frp" min="0" max="500" value="0" step="10" />
+        </label>
+        <button id="btn-reset" class="btn btn-ghost btn-block">Reset</button>
+      </section>
+
+      <section class="card">
+        <h3>KPIs</h3>
+        <div class="kpi"><span>Detections</span><b id="k-total">0</b></div>
+        <div class="kpi"><span>Active days</span><b id="k-days">0</b></div>
+        <div class="kpi"><span>Avg FRP</span><b id="k-frp">0.0</b></div>
+        <div class="kpi"><span>Avg conf.</span><b id="k-conf">0%</b></div>
+        <div class="kpi"><span>Calibration c</span><b id="k-c">—</b></div>
+      </section>
+
+      <section class="card">
+        <h3>Legend</h3>
+        <div class="legend-row"><span class="dot dot-low"></span> Low (&lt; 20% of peak)</div>
+        <div class="legend-row"><span class="dot dot-mid"></span> Moderate</div>
+        <div class="legend-row"><span class="dot dot-high"></span> High</div>
+        <div class="legend-row"><span class="dot dot-crit"></span> Critical (z ≥ 1.5)</div>
+      </section>
+    </aside>
+
+    <section class="content">
+      <nav class="tabs">
+        <button data-tab="calendar" class="tab active">Calendar</button>
+        <button data-tab="map" class="tab">Map</button>
+        <button data-tab="compare" class="tab">Seam test</button>
+        <button data-tab="data" class="tab">Data</button>
+      </nav>
+
+      <div id="panel-calendar" class="panel">
+        <div class="panel-head">
+          <h2>Burning activity calendar — year × week</h2>
+          <span id="cal-range" class="muted">—</span>
+        </div>
+        <div id="calendar-grid" class="cal-grid"></div>
+        <div id="day-detail" class="day-detail hidden"></div>
+      </div>
+
+      <div id="panel-map" class="panel hidden">
+        <div id="map" class="map"></div>
+      </div>
+
+      <div id="panel-compare" class="panel hidden">
+        <div class="panel-head">
+          <h2>Seam test — raw vs harmonised</h2>
+          <span class="muted">Monthly detections by sensor</span>
+        </div>
+        <canvas id="seam-canvas" width="900" height="360"></canvas>
+        <p class="note">The 2012 step should be visible in the raw series and gone in the
+          harmonised one. With only 7 days of data the overlap is thin — run the full
+          history pull for a stable <code>c_m</code>.</p>
+      </div>
+
+      <div id="panel-data" class="panel hidden">
+        <div class="panel-head">
+          <div class="search-row">
+            <input id="table-search" class="input" placeholder="Search region or date…" />
+            <span id="table-count" class="muted">0 records</span>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr>
+              <th>Date</th><th>Sensor</th><th>Lat</th><th>Lon</th><th>Region</th>
+              <th>Conf.</th><th>FRP (MW)</th>
+            </tr></thead>
+            <tbody id="table-body"></tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <button id="pg-prev" class="btn btn-ghost">Prev</button>
+          <span id="pg-info" class="muted">Page 1 of 1</span>
+          <button id="pg-next" class="btn btn-ghost">Next</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
