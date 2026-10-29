@@ -1,8 +1,5 @@
 # Raw, large FIRMS bulk downloads (regenerate with pipeline/fetch_firms.py)
 data/raw/
-# Generated web data (regenerate with pipeline/build_web_data.py)
-web/data/*.json
-web/data/*.csv
 # Python
 __pycache__/
 *.pyc

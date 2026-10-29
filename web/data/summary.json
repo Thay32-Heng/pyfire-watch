@@ -1,0 +1,33 @@
+{
+  "rows": 130,
+  "date_min": "2026-10-22",
+  "date_max": "2026-10-29",
+  "years": [
+    2026
+  ],
+  "by_sensor": {
+    "VIIRS": 127,
+    "MODIS": 3
+  },
+  "modis_conf_min_kept": 80,
+  "viirs_tiers_kept": [
+    "nominal",
+    "high"
+  ],
+  "calibration": {
+    "c_global": 42.333,
+    "note": "median(VIIRS/MODIS) on overlap; needs multi-year history for stability"
+  },
+  "raw_by_month": {
+    "2026-10": {
+      "MODIS": 28,
+      "VIIRS": 133
+    }
+  },
+  "metrics": {
+    "total_hotspots": 130,
+    "active_days": 8,
+    "avg_frp": 4.76,
+    "avg_conf_pct": 61.0
+  }
+}
